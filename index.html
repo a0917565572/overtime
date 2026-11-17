@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>零星加班登記</title>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    :root {
+      --bg: #f3f6f8; --card: #fff; --ink: #1f2933; --muted: #637381; --line: #dfe5ea;
+      --pri: #0f766e; --pri-soft: #e6f4f2; --danger: #c0392b; --warn-bg: #fff4e5; --warn: #9a5b00;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+      background: var(--bg); color: var(--ink); font-size: 16px; line-height: 1.5; }
+    .hidden { display: none !important; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 12px 12px 80px; }
+    .wrap.wide { max-width: 1200px; }
+    header.bar { background: var(--pri); color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; position: sticky; top: 0; z-index: 5; }
+    header.bar h1 { font-size: 18px; margin: 0; font-weight: 600; }
+    .chip { background: rgba(255,255,255,.2); border-radius: 99px; padding: 2px 10px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+    .card { background: var(--card); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    .card h2 { font-size: 16px; margin: 0 0 10px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .row > * { flex: 1 1 140px; }
+    label.f { display: block; font-size: 14px; color: var(--muted); margin: 10px 0 4px; }
+    label.f b { color: var(--danger); font-weight: normal; }
+    input, select, textarea { width: 100%; font: inherit; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: inherit; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--pri); outline-offset: -1px; border-color: transparent; }
+    textarea { min-height: 64px; resize: vertical; }
+    button { font: inherit; border: 0; border-radius: 8px; padding: 9px 14px; cursor: pointer; background: #e9eef2; color: var(--ink); }
+    button.pri { background: var(--pri); color: #fff; }
+    button.big { width: 100%; padding: 13px; font-size: 17px; }
+    button.ghost { background: transparent; color: var(--pri); padding: 6px 8px; }
+    button.danger { color: var(--danger); }
+    button:disabled { opacity: .5; cursor: default; }
+    .hint { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .err { color: var(--danger); }
+    .ok { color: var(--pri); }
+    .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; background: var(--pri-soft); color: var(--pri); font-size: 14px; font-weight: 600; }
+    .warnbox { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-top: 6px; }
+    .profile-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .profile-line .who { font-size: 15px; }
+    .period-h { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 4px 8px; }
+    .period-h h3 { margin: 0; font-size: 15px; }
+    .period-h span { font-size: 13px; color: var(--muted); }
+    .rec { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; border-left: 4px solid var(--pri); }
+    .rec .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+    .rec .d { font-weight: 600; }
+    .rec .m { color: var(--pri); font-weight: 600; white-space: nowrap; }
+    .rec .s { font-size: 14px; color: var(--muted); margin-top: 2px; white-space: pre-line; word-break: break-all; }
+    .rec .acts { text-align: right; margin-top: 2px; }
+    .adj-row { border: 1px solid var(--line); border-radius: 10px; padding: 8px; margin-bottom: 8px; }
+    .adj-row .t { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: center; }
+    .adj-row .t > * { min-width: 0; }
+    .adj-row .o { display: flex; gap: 6px; margin-top: 6px; }
+    .adj-row .o select { flex: 1; }
+    .adj-row .o button { flex: 0 0 auto; }
+    .empty { text-align: center; color: var(--muted); padding: 24px 0; }
+    .foot { text-align: center; margin-top: 30px; }
+    /* modal */
+    .modal { position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+    .modal .sheet { background: var(--bg); width: 100%; max-width: 640px; max-height: 94vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 0 0 16px; }
+    @media (min-width: 700px) { .modal { align-items: center; } .modal .sheet { border-radius: 16px; } }
+    .sheet-h { position: sticky; top: 0; background: var(--bg); padding: 14px 16px 8px; display: flex; justify-content: space-between; align-items: center; z-index: 2; }
+    .sheet-h h2 { margin: 0; font-size: 17px; }
+    .sheet .card { margin: 0 12px 12px; }
+    .card:has(> #rfErr:empty) { display: none; }
+    .sheet-f { display: flex; gap: 10px; padding: 0 12px; }
+    .sheet-f button { flex: 1; padding: 12px; }
+    /* overlay & toast */
+    #loading { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; color: var(--muted); }
+    .spin { width: 34px; height: 34px; border: 3px solid var(--line); border-top-color: var(--pri); border-radius: 50%; animation: sp 0.8s linear infinite; margin-bottom: 12px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #1f2933; color: #fff; padding: 10px 18px; border-radius: 99px; font-size: 14px; z-index: 60; opacity: 0; transition: opacity .2s; pointer-events: none; }
+    #toast.show { opacity: .95; }
+    /* admin */
+    .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .stat { flex: 1 1 100px; background: var(--pri-soft); border-radius: 10px; padding: 8px 12px; }
+    .stat b { display: block; font-size: 20px; color: var(--pri); }
+    .stat span { font-size: 13px; color: var(--muted); }
+    .tbl-wrap { overflow-x: auto; }
+    table.list { border-collapse: collapse; width: 100%; font-size: 14px; }
+    table.list th, table.list td { border-bottom: 1px solid var(--line); padding: 6px 6px; text-align: left; vertical-align: top; }
+    table.list th { background: #f7f9fa; white-space: nowrap; position: sticky; top: 0; }
+    table.list td { white-space: nowrap; }
+    table.list td.wr { white-space: normal; min-width: 240px; }
+    table.list td.n { text-align: right; }
+    table.list td.pre { white-space: pre-line; }
+    table.list tr.unit-h td { background: var(--pri-soft); font-weight: 600; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .toolbar input[type=date] { width: auto; flex: 0 1 160px; }
+    .toolbar select { width: auto; flex: 0 1 140px; }
+
+    /* ======== 列印版面 ======== */
+    #printArea { display: none; }
+    @media print {
+      @page { size: A4 landscape; margin: 10mm 8mm; }
+      body { background: #fff; font-size: 11pt; }
+      body > *:not(#printArea) { display: none !important; }
+      #printArea { display: block; }
+    }
+    .pr-page { font-family: "DFKai-SB", "BiauKai", "標楷體", "Noto Serif TC", serif; color: #000; }
+    .pr-page + .pr-page { page-break-before: always; break-before: page; }
+    .pr-title { text-align: center; font-size: 18pt; font-weight: bold; margin: 0 0 2mm; }
+    .pr-sub { display: flex; justify-content: space-between; font-size: 10.5pt; margin-bottom: 2mm; }
+    table.pr { border-collapse: collapse; width: 100%; font-size: 10.5pt; }
+    table.pr th, table.pr td { border: 1px solid #000; padding: 1.2mm 1.5mm; vertical-align: middle; }
+    table.pr th { background: #eee; font-weight: bold; text-align: center; white-space: pre-line; line-height: 1.25; }
+    table.pr thead { display: table-header-group; }
+    table.pr tr { page-break-inside: avoid; break-inside: avoid; }
+    table.pr td.c { text-align: center; white-space: nowrap; }
+    table.pr td.pre { white-space: pre-line; }
+    table.pr td.wrap { word-break: break-all; }
+    table.pr tr.tot td { font-weight: bold; background: #f4f4f4; }
+    .pr-sign { display: flex; margin-top: 6mm; font-size: 12pt; page-break-inside: avoid; break-inside: avoid; }
+    .pr-sign div { flex: 1; padding-right: 8mm; }
+    .pr-sign span { display: inline-block; border-bottom: 1px solid #000; width: 60%; margin-left: 2mm; height: 1.2em; vertical-align: bottom; }
+    .pr-note { font-size: 9pt; margin-top: 2mm; }
+  </style>
+</head>
+<body>
+  <div id="loading"><div class="spin"></div><div id="loadingText">載入中...</div></div>
+
+  <!-- ===================== 一般人員 ===================== -->
+  <div id="staffView" class="hidden">
+    <header class="bar"><h1>零星加班登記</h1><span class="chip" id="meChip"></span></header>
+    <div class="wrap">
+      <div class="card">
+        <div class="profile-line">
+          <div class="who" id="profileText"></div>
+          <button class="ghost" id="editProfileBtn">修改</button>
+        </div>
+      </div>
+      <button class="pri big" id="newRecBtn">＋ 新增加班紀錄</button>
+      <div class="hint" style="margin:8px 4px 0">本表只登記<b>未滿 30 分鐘</b>的零星加班。填錯可以自己修改或刪除。</div>
+      <div id="myList"></div>
+      <div class="foot"><button class="ghost" id="toAdminBtn">管理者登入</button></div>
+    </div>
+  </div>
+
+  <!-- ===================== 管理者 ===================== -->
+  <div id="adminView" class="hidden">
+    <header class="bar"><h1>零星加班統計 · 後台</h1><span class="chip" id="adminChip">管理者</span></header>
+    <div class="wrap wide">
+      <div class="card" id="adminLoginCard">
+        <h2>管理者登入</h2>
+        <div class="row">
+          <input type="password" id="adminPwd" placeholder="管理者密碼" autocomplete="current-password">
+          <button class="pri" id="adminLoginBtn" style="flex:0 0 auto">登入</button>
+        </div>
+        <div class="hint" id="backToStaff"></div>
+      </div>
+
+      <div id="adminMain" class="hidden">
+        <div class="card">
+          <div class="toolbar">
+            <button id="prevPeriod">◀</button>
+            <strong id="periodLabel" style="flex:0 0 auto"></strong>
+            <button id="nextPeriod">▶</button>
+            <input type="date" id="fromDate"> ～ <input type="date" id="toDate">
+            <select id="unitFilter"></select>
+            <button id="reloadBtn">重新整理</button>
+          </div>
+          <div class="stats" style="margin-top:12px">
+            <div class="stat"><b id="stCount">0</b><span>筆紀錄</span></div>
+            <div class="stat"><b id="stPeople">0</b><span>人</span></div>
+            <div class="stat"><b id="stDays">0</b><span>人次天數</span></div>
+            <div class="stat"><b id="stMin">0</b><span>總分鐘</span></div>
+          </div>
+          <div class="toolbar" style="margin-top:12px">
+            <button class="pri" id="printBtn">🖨 列印統計表</button>
+            <label style="font-size:14px;display:flex;gap:4px;align-items:center;flex:0 0 auto"><input type="checkbox" id="withSummary" checked style="width:auto"> 附每人合計頁</label>
+            <button id="xlsxBtn">⬇ 下載 Excel</button>
+            <button id="adminAddBtn">＋ 代填一筆</button>
+            <button id="settingsBtn">⚙ 設定</button>
+            <button class="ghost" id="adminLogoutBtn">登出</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>明細</h2>
+          <div class="tbl-wrap"><table class="list" id="adminTable"></table></div>
+        </div>
+        <div class="card">
+          <h2>每人合計</h2>
+          <div class="tbl-wrap"><table class="list" id="sumTable"></table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 個人資料 ===================== -->
+  <div class="modal hidden" id="profileModal">
+    <div class="sheet">
+      <div class="sheet-h"><h2>個人資料</h2></div>
+      <div class="card">
+        <div class="hint">第一次使用請填寫，之後會自動帶入。</div>
+        <label class="f">單位 <b>*</b></label>
+        <select id="pfUnit"></select>
+        <label class="f">員工代號 <b>*</b></label>
+        <input id="pfEmp" inputmode="numeric" placeholder="例：1477">
+        <label class="f">姓名 <b>*</b></label>
+        <input id="pfName" placeholder="請填本名">
+        <div class="hint err" id="pfErr"></div>
+      </div>
+      <div class="sheet-f">
+        <button id="pfCancel">取消</button>
+        <button class="pri" id="pfSave">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 加班紀錄表單 ===================== -->
+  <div class="modal hidden" id="recModal">
+    <div class="sheet">
+      <div class="sheet-h"><h2 id="recTitle">新增加班紀錄</h2><button class="ghost" id="recClose">✕</button></div>
+
+      <div class="card hidden" id="recWhoCard">
+        <h2>人員</h2>
+        <div class="row">
+          <div><label class="f">單位 <b>*</b></label><select id="rfUnit"></select></div>
+          <div><label class="f">員工代號 <b>*</b></label><input id="rfEmp" inputmode="numeric"></div>
+          <div><label class="f">姓名 <b>*</b></label><input id="rfName"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div><label class="f">加班日期 <b>*</b></label><input type="date" id="rfDate"></div>
+          <div><label class="f">班別 <b>*</b></label><select id="rfShift"></select></div>
+        </div>
+        <div class="row">
+          <div><label class="f">開始時間 <b>*</b></label><input type="time" id="rfStart" step="60"></div>
+          <div><label class="f">結束時間 <b>*</b></label><input type="time" id="rfEnd" step="60"></div>
+        </div>
+        <div style="margin-top:8px" id="rfMinutes"></div>
+      </div>
+
+      <div class="card">
+        <h2>最後一位病人 / 原因</h2>
+        <div class="row">
+          <div><label class="f">病歷號</label><input id="rfChart" inputmode="numeric" placeholder="例：729389"></div>
+          <div><label class="f">病人姓名（選填）</label><input id="rfPatient" placeholder="例：王家棉"></div>
+        </div>
+        <div class="hint" id="rfPatientHint">為了個資保護，姓名只會存成遮罩後的樣子，例如：王家棉 → 王0棉</div>
+        <label class="f">原因 / 處理事項</label>
+        <textarea id="rfReason" placeholder="例：協助李醫師做胃大鏡、核對檢體"></textarea>
+        <div class="hint">病歷號和原因至少填一項。</div>
+        <div class="hint" id="rfPreview"></div>
+      </div>
+
+      <div class="card">
+        <h2>加補時間（選填）</h2>
+        <div class="hint" style="margin-bottom:8px">當天有提早上班、延後下班或少上的時段，請在這裡加一段。</div>
+        <div id="adjList"></div>
+        <button id="adjAdd">＋ 新增一段</button>
+        <div class="hint" id="adjPreview"></div>
+      </div>
+
+      <div class="card"><div class="hint err" id="rfErr"></div></div>
+      <div class="sheet-f">
+        <button class="danger hidden" id="rfDelete">刪除</button>
+        <button class="pri" id="rfSave">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 後台設定 ===================== -->
+  <div class="modal hidden" id="settingsModal">
+    <div class="sheet">
+      <div class="sheet-h"><h2>報表設定</h2></div>
+      <div class="card">
+        <label class="f">報表標題</label>
+        <input id="stTitle">
+        <label class="f">簽名欄（用逗號分隔）</label>
+        <input id="stSigners" placeholder="護理長,督導,主任">
+        <label class="f">統計週期開始日（每月幾號）</label>
+        <input id="stDay" type="number" min="1" max="28">
+        <div class="hint">例如填 21：統計期間就是 9/21～10/20。<br>班別代號和單位請直接到試算表的「班別」「單位」分頁修改。</div>
+      </div>
+      <div class="sheet-f">
+        <button id="stCancel">取消</button>
+        <button class="pri" id="stSave">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="printArea"></div>
+  <div id="toast"></div>
+
+  <script>
+    /* ======================== 設定區 ======================== */
+    const API_URL = '';   // ← Apps Script 網頁應用程式網址（結尾 /exec）
+    const LIFF_ID = '';   // ← 新建的 LIFF ID
+    /* ======================================================== */
+
+    const $ = id => document.getElementById(id);
+    const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+    const params = new URLSearchParams(location.search);
+    const ADMIN_ONLY = params.get('admin') === '1';
+
+    let idToken = null, lineName = '';
+    let shifts = [], units = [], settings = { title: '', signers: '', periodStartDay: 21 };
+    let profile = null, myRecords = [];
+    let adminToken = null, adminRecords = [], period = null;
+    let editing = null;          // { mode: 'staff'|'admin', rec }
+
+    /* ---------------- 共用工具 ---------------- */
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function toast(msg) {
+      const t = $('toast'); t.textContent = msg; t.classList.add('show');
+      clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2200);
+    }
+    function store(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} }
+    function load(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+
+    async function api(action, payload = {}) {
+      if (!API_URL) throw new Error('尚未完成設定：index.html 的 API_URL 還沒填');
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action, idToken }, payload))
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || '發生錯誤');
+      return j.data;
+    }
+
+    function maskName(s) {
+      const ch = Array.from(String(s || '').trim().replace(/\s+/g, ''));
+      if (ch.length === 0) return '';
+      if (ch.length === 1) return ch[0];
+      if (ch.length === 2) return ch[0] + '0';
+      return ch[0] + '0'.repeat(ch.length - 2) + ch[ch.length - 1];
+    }
+    const toMin = t => { const p = String(t).split(':'); return (+p[0]) * 60 + (+p[1]); };
+    const fmtNum = n => String(Math.round(n * 100) / 100);
+    function adjustText(list) {
+      return (list || []).map(a => {
+        const h = (toMin(a.to) - toMin(a.from)) / 60;
+        return a.from.replace(':', '') + '-' + a.to.replace(':', '') + ' ' + (a.sign < 0 ? '-' : '+') + fmtNum(h);
+      }).join('\n');
+    }
+    function reasonText(r) {
+      let s = r.chartNo || '';
+      if (r.patient) s += (s ? ' ' : '') + r.patient;
+      if (r.reason) s += (s ? '/' : '') + r.reason;
+      return s;
+    }
+    function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    function parseYmd(s) { const p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+    function slashDate(s) { return s ? s.replace(/-/g, '/') : ''; }
+    function shortDate(s) { const d = parseYmd(s); return (d.getMonth() + 1) + '/' + d.getDate() + '（' + WEEK[d.getDay()] + '）'; }
+
+    /** 依「每月 N 號開始」算出某一天所在的統計期間 */
+    function periodOf(dateStr, offset = 0) {
+      const sd = Number(settings.periodStartDay) || 21;
+      const d = parseYmd(dateStr);
+      let y = d.getFullYear(), m = d.getMonth();
+      if (d.getDate() < sd) m -= 1;
+      m += offset;
+      const from = new Date(y, m, sd);
+      const to = new Date(y, m + 1, sd - 1);
+      return { from: ymd(from), to: ymd(to), label: periodLabel(to) };
+    }
+    function periodLabel(toDate) {
+      return (toDate.getFullYear() - 1911) + '年' + (toDate.getMonth() + 1) + '月';
+    }
+
+    function unitIndex(u) { const i = units.indexOf(u); return i < 0 ? 999 : i; }
+    function sortRecs(list) {
+      return list.slice().sort((a, b) =>
+        unitIndex(a.unit) - unitIndex(b.unit) ||
+        String(a.unit).localeCompare(String(b.unit)) ||
+        (Number(a.empId) || 0) - (Number(b.empId) || 0) ||
+        String(a.empId).localeCompare(String(b.empId)) ||
+        a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+    }
+    function summarize(list) {
+      const map = new Map();
+      sortRecs(list).forEach(r => {
+        const k = r.unit + '|' + r.empId + '|' + r.name;
+        if (!map.has(k)) map.set(k, { unit: r.unit, empId: r.empId, name: r.name, days: new Set(), count: 0, minutes: 0, adj: 0 });
+        const s = map.get(k);
+        s.days.add(r.date); s.count++; s.minutes += Number(r.minutes) || 0;
+        (r.adjust || []).forEach(a => s.adj += a.sign * (toMin(a.to) - toMin(a.from)) / 60);
+      });
+      return Array.from(map.values()).map(s => Object.assign(s, { days: s.days.size }));
+    }
+    const fmtAdj = n => n === 0 ? '' : (n > 0 ? '+' : '') + fmtNum(n);
+
+    function fillSelect(sel, items, placeholder) {
+      sel.innerHTML = (placeholder ? `<option value="">${esc(placeholder)}</option>` : '') +
+        items.map(i => `<option value="${esc(i.value)}">${esc(i.text)}</option>`).join('');
+    }
+    function fillShiftSelect() {
+      fillSelect($('rfShift'), shifts.map(s => ({ value: s.code, text: `${s.code}（${s.hours} 小時）` })), '請選擇班別');
+    }
+    function fillUnitSelect(sel, placeholder) {
+      fillSelect(sel, units.map(u => ({ value: u, text: u })), placeholder);
+    }
+
+    /* ---------------- 啟動 ---------------- */
+    function showFatal(title, msg) {
+      $('loading').innerHTML = `<div style="padding:24px;text-align:center"><h2 style="color:var(--danger)">${esc(title)}</h2><p>${esc(msg)}</p><button onclick="location.reload()">重新整理</button></div>`;
+      $('loading').classList.remove('hidden');
+    }
+
+    (async function boot() {
+      try {
+        if (ADMIN_ONLY) { await enterAdmin(); return; }
+        if (LIFF_ID) {
+          $('loadingText').textContent = '正在使用 LINE 登入...';
+          await liff.init({ liffId: LIFF_ID });
+          if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+          idToken = liff.getIDToken();
+        }
+        $('loadingText').textContent = '正在載入資料...';
+        const d = await api('init');
+        lineName = d.me.lineName; shifts = d.shifts; units = d.units; settings = d.settings;
+        profile = d.profile; myRecords = d.records;
+        $('meChip').textContent = lineName || '未登入 LINE';
+        fillShiftSelect();
+        renderStaff();
+        $('staffView').classList.remove('hidden');
+        $('loading').classList.add('hidden');
+        if (!profile) openProfile(true);
+      } catch (err) {
+        showFatal('無法連線加班登記系統', err.message);
+      }
+    })();
+
+    /* ---------------- 一般人員畫面 ---------------- */
+    function renderStaff() {
+      $('profileText').innerHTML = profile
+        ? `<b>${esc(profile.name)}</b>　${esc(profile.unit)}｜員工代號 ${esc(profile.empId)}`
+        : '<span class="err">尚未填寫個人資料</span>';
+      const box = $('myList');
+      if (!myRecords.length) { box.innerHTML = '<div class="empty">還沒有加班紀錄</div>'; return; }
+      const groups = new Map();
+      myRecords.slice().sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start)).forEach(r => {
+        const p = periodOf(r.date);
+        if (!groups.has(p.from)) groups.set(p.from, { p, list: [] });
+        groups.get(p.from).list.push(r);
+      });
+      box.innerHTML = Array.from(groups.values()).map(({ p, list }) => {
+        const mins = list.reduce((s, r) => s + (Number(r.minutes) || 0), 0);
+        const days = new Set(list.map(r => r.date)).size;
+        return `<div class="period-h"><h3>${p.label}　<span>${slashDate(p.from).slice(5)}～${slashDate(p.to).slice(5)}</span></h3>
+          <span>${days} 天・共 ${mins} 分鐘</span></div>` +
+          list.map(r => `<div class="rec">
+            <div class="top"><span class="d">${shortDate(r.date)}　${esc(r.start)}–${esc(r.end)}</span><span class="m">${r.minutes} 分</span></div>
+            <div class="s">班別 ${esc(r.shiftCode)}・${esc(reasonText(r))}${r.adjustText ? '\n加補：' + esc(r.adjustText).replace(/\n/g, '、') : ''}</div>
+            <div class="acts"><button class="ghost" data-edit="${esc(r.id)}">修改</button></div>
+          </div>`).join('');
+      }).join('');
+    }
+    $('myList').addEventListener('click', e => {
+      const id = e.target.dataset.edit;
+      if (id) openRecord('staff', myRecords.find(r => r.id === id));
+    });
+    $('newRecBtn').addEventListener('click', () => profile ? openRecord('staff', null) : openProfile(true));
+    $('editProfileBtn').addEventListener('click', () => openProfile(false));
+    $('toAdminBtn').addEventListener('click', enterAdmin);
+
+    function openProfile(firstTime) {
+      fillUnitSelect($('pfUnit'), '請選擇單位');
+      $('pfUnit').value = profile ? profile.unit : '';
+      $('pfEmp').value = profile ? profile.empId : '';
+      $('pfName').value = profile ? profile.name : '';
+      $('pfErr').textContent = '';
+      $('pfCancel').classList.toggle('hidden', !!firstTime && !profile);
+      $('profileModal').classList.remove('hidden');
+    }
+    $('pfCancel').addEventListener('click', () => $('profileModal').classList.add('hidden'));
+    $('pfSave').addEventListener('click', async () => {
+      const p = { unit: $('pfUnit').value, empId: $('pfEmp').value.trim(), name: $('pfName').value.trim() };
+      if (!p.unit || !p.empId || !p.name) { $('pfErr').textContent = '三個欄位都要填'; return; }
+      $('pfSave').disabled = true;
+      try {
+        const d = await api('saveProfile', { profile: p });
+        profile = d.profile;
+        $('profileModal').classList.add('hidden');
+        renderStaff();
+        toast('個人資料已儲存');
+      } catch (err) { $('pfErr').textContent = err.message; }
+      $('pfSave').disabled = false;
+    });
+
+    /* ---------------- 加班紀錄表單 ---------------- */
+    function openRecord(mode, rec) {
+      editing = { mode, rec };
+      $('recTitle').textContent = rec ? '修改加班紀錄' : (mode === 'admin' ? '代填加班紀錄' : '新增加班紀錄');
+      $('recWhoCard').classList.toggle('hidden', mode !== 'admin');
+      if (mode === 'admin') {
+        fillUnitSelect($('rfUnit'), '請選擇');
+        $('rfUnit').value = rec ? rec.unit : '';
+        $('rfEmp').value = rec ? rec.empId : '';
+        $('rfName').value = rec ? rec.name : '';
+      }
+      $('rfDate').value = rec ? rec.date : ymd(new Date());
+      $('rfShift').value = rec ? rec.shiftCode : (lastShift() || '');
+      $('rfStart').value = rec ? rec.start : '';
+      $('rfEnd').value = rec ? rec.end : '';
+      $('rfChart').value = rec ? rec.chartNo : '';
+      $('rfPatient').value = rec ? rec.patient : '';
+      $('rfReason').value = rec ? rec.reason : '';
+      $('adjList').innerHTML = '';
+      (rec ? rec.adjust || [] : []).forEach(addAdjRow);
+      $('rfErr').textContent = '';
+      $('rfDelete').classList.toggle('hidden', !rec);
+      updateFormPreview();
+      $('recModal').classList.remove('hidden');
+      $('recModal').querySelector('.sheet').scrollTop = 0;
+    }
+    function lastShift() {
+      const r = myRecords.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      return r && shifts.some(s => s.code === r.shiftCode) ? r.shiftCode : '';
+    }
+    function closeRecord() { $('recModal').classList.add('hidden'); editing = null; }
+    $('recClose').addEventListener('click', closeRecord);
+
+    function addAdjRow(a) {
+      const div = document.createElement('div');
+      div.className = 'adj-row';
+      div.innerHTML = `<div class="t"><input type="time" class="aF" step="60"><span>～</span><input type="time" class="aT" step="60"></div>
+        <div class="o"><select class="aS"><option value="1">＋ 加（多上的時間）</option><option value="-1">－ 減（少上的時間）</option></select>
+        <button type="button" class="aX danger">移除</button></div>`;
+      if (a) { div.querySelector('.aF').value = a.from; div.querySelector('.aT').value = a.to; div.querySelector('.aS').value = String(a.sign < 0 ? -1 : 1); }
+      $('adjList').appendChild(div);
+    }
+    $('adjAdd').addEventListener('click', () => { addAdjRow(null); updateFormPreview(); });
+    $('adjList').addEventListener('click', e => { if (e.target.classList.contains('aX')) { e.target.parentElement.remove(); updateFormPreview(); } });
+
+    function readAdj() {
+      return Array.from($('adjList').children).map(div => ({
+        from: div.querySelector('.aF').value, to: div.querySelector('.aT').value, sign: Number(div.querySelector('.aS').value)
+      }));
+    }
+    function updateFormPreview() {
+      $('rfErr').textContent = '';
+      // 加班分鐘
+      const s = $('rfStart').value, e = $('rfEnd').value, box = $('rfMinutes');
+      if (s && e) {
+        const m = toMin(e) - toMin(s);
+        if (m <= 0) box.innerHTML = '<span class="err">結束時間要晚於開始時間</span>';
+        else if (m >= 30) box.innerHTML = `<div class="warnbox">這筆是 ${m} 分鐘。本表只登記<b>未滿 30 分鐘</b>的零星加班，30 分鐘以上請依正式加班流程申請。</div>`;
+        else box.innerHTML = `加班 <span class="pill">${m} 分鐘</span>`;
+      } else box.innerHTML = '<span class="hint">填好開始與結束時間，會自動算出分鐘數</span>';
+      // 病人姓名遮罩
+      const pn = $('rfPatient').value.trim();
+      $('rfPatientHint').innerHTML = pn
+        ? `會存成：<b>${esc(maskName(pn))}</b>（完整姓名不會送出）`
+        : '為了個資保護，姓名只會存成遮罩後的樣子，例如：王家棉 → 王0棉';
+      const rt = reasonText({ chartNo: $('rfChart').value.trim(), patient: maskName(pn), reason: $('rfReason').value.trim() });
+      $('rfPreview').innerHTML = rt ? '列印顯示：' + esc(rt) : '';
+      // 加補時間
+      const adj = readAdj().filter(a => a.from && a.to && toMin(a.to) > toMin(a.from));
+      $('adjPreview').innerHTML = adj.length ? '列印顯示：' + esc(adjustText(adj)).replace(/\n/g, '<br>') : '';
+    }
+    $('recModal').addEventListener('input', updateFormPreview);
+    $('recModal').addEventListener('change', updateFormPreview);
+
+    function collectForm() {
+      const rec = {
+        id: editing.rec ? editing.rec.id : '',
+        date: $('rfDate').value, shiftCode: $('rfShift').value,
+        start: $('rfStart').value, end: $('rfEnd').value,
+        chartNo: $('rfChart').value.trim(), patient: maskName($('rfPatient').value),
+        reason: $('rfReason').value.trim(), adjust: readAdj()
+      };
+      if (editing.mode === 'admin') Object.assign(rec, { unit: $('rfUnit').value, empId: $('rfEmp').value.trim(), name: $('rfName').value.trim() });
+      // 前端先檢查一次
+      if (editing.mode === 'admin' && (!rec.unit || !rec.empId || !rec.name)) return '請填寫單位、員工代號、姓名';
+      if (!rec.date) return '請選擇加班日期';
+      if (!rec.shiftCode) return '請選擇班別';
+      if (!rec.start || !rec.end) return '請填寫開始與結束時間';
+      const m = toMin(rec.end) - toMin(rec.start);
+      if (m <= 0) return '結束時間要晚於開始時間';
+      if (m >= 30) return '本表只登記未滿 30 分鐘的零星加班';
+      if (!rec.chartNo && !rec.reason) return '病歷號和原因至少填一項';
+      for (const a of rec.adjust) {
+        if (!a.from || !a.to) return '加補時間的起訖時間沒填完整（不需要的話按 ✕ 移除）';
+        if (toMin(a.to) <= toMin(a.from)) return '加補時間的結束要晚於開始';
+      }
+      return rec;
+    }
+
+    $('rfSave').addEventListener('click', async () => {
+      const rec = collectForm();
+      if (typeof rec === 'string') { $('rfErr').textContent = rec; return; }
+      $('rfSave').disabled = true; $('rfErr').textContent = '';
+      try {
+        if (editing.mode === 'admin') {
+          const saved = await api('adminSave', { token: adminToken, record: rec });
+          upsert(adminRecords, saved);
+          renderAdmin();
+        } else {
+          const saved = await api('saveRecord', { record: rec });
+          upsert(myRecords, saved);
+          renderStaff();
+        }
+        closeRecord();
+        toast('已儲存');
+      } catch (err) { $('rfErr').textContent = err.message; handleAdminExpiry(err); }
+      $('rfSave').disabled = false;
+    });
+    $('rfDelete').addEventListener('click', async () => {
+      const r = editing.rec;
+      if (!confirm(`確定要刪除 ${slashDate(r.date)} ${r.start}–${r.end}（${r.name}）這筆紀錄嗎？`)) return;
+      try {
+        if (editing.mode === 'admin') {
+          await api('adminDelete', { token: adminToken, id: r.id });
+          adminRecords = adminRecords.filter(x => x.id !== r.id); renderAdmin();
+        } else {
+          await api('deleteRecord', { id: r.id });
+          myRecords = myRecords.filter(x => x.id !== r.id); renderStaff();
+        }
+        closeRecord(); toast('已刪除');
+      } catch (err) { $('rfErr').textContent = err.message; handleAdminExpiry(err); }
+    });
+    function upsert(list, rec) {
+      const i = list.findIndex(x => x.id === rec.id);
+      if (i >= 0) list[i] = rec; else list.push(rec);
+    }
+
+    /* ---------------- 管理者 ---------------- */
+    async function enterAdmin() {
+      $('staffView').classList.add('hidden');
+      $('adminView').classList.remove('hidden');
+      $('loading').classList.add('hidden');
+      $('backToStaff').innerHTML = ADMIN_ONLY ? '' : '<button class="ghost" id="backBtn">← 回到填報畫面</button>';
+      if (!ADMIN_ONLY) $('backBtn').addEventListener('click', () => { $('adminView').classList.add('hidden'); $('staffView').classList.remove('hidden'); });
+      adminToken = load('ot_admin');
+      if (adminToken) {
+        try { await startAdmin(); return; } catch (e) { adminToken = null; store('ot_admin', null); }
+      }
+      $('adminLoginCard').classList.remove('hidden');
+      $('adminMain').classList.add('hidden');
+    }
+    $('adminPwd').addEventListener('keydown', e => { if (e.key === 'Enter') $('adminLoginBtn').click(); });
+    $('adminLoginBtn').addEventListener('click', async () => {
+      $('adminLoginBtn').disabled = true;
+      try {
+        const d = await api('adminLogin', { password: $('adminPwd').value });
+        adminToken = d.token; store('ot_admin', adminToken);
+        $('adminPwd').value = '';
+        await startAdmin();
+      } catch (err) { alert(err.message); }
+      $('adminLoginBtn').disabled = false;
+    });
+    $('adminLogoutBtn').addEventListener('click', () => {
+      adminToken = null; store('ot_admin', null);
+      $('adminMain').classList.add('hidden'); $('adminLoginCard').classList.remove('hidden');
+    });
+    function handleAdminExpiry(err) {
+      if (/管理者登入已過期/.test(err.message)) { store('ot_admin', null); $('adminLogoutBtn').click(); }
+    }
+
+    async function startAdmin() {
+      if (!period) {
+        // 先用預設週期，載入設定後再校正
+        const saved = load('ot_period');
+        period = saved ? JSON.parse(saved) : null;
+      }
+      await reloadAdmin(true);
+      $('adminLoginCard').classList.add('hidden');
+      $('adminMain').classList.remove('hidden');
+    }
+    async function reloadAdmin(first) {
+      if (!period) period = periodOf(ymd(new Date()));
+      let d = await api('adminList', { token: adminToken, from: period.from, to: period.to });
+      shifts = d.shifts; units = d.units; settings = d.settings;
+      if (first && !load('ot_period')) {
+        const p = periodOf(ymd(new Date()));   // 用正確的週期開始日重算
+        if (p.from !== period.from || p.to !== period.to) {
+          period = p; d = await api('adminList', { token: adminToken, from: period.from, to: period.to });
+        }
+      }
+      adminRecords = d.records;
+      fillShiftSelect();
+      const keep = $('unitFilter').value;
+      fillSelect($('unitFilter'), [{ value: '', text: '全部單位' }].concat(units.map(u => ({ value: u, text: u }))));
+      $('unitFilter').value = units.includes(keep) ? keep : '';
+      renderAdmin();
+    }
+    function setPeriod(p) {
+      period = p; store('ot_period', JSON.stringify(p));
+      reloadAdmin(false).catch(err => { alert(err.message); handleAdminExpiry(err); });
+    }
+    $('prevPeriod').addEventListener('click', () => setPeriod(periodOf(period.from, -1)));
+    $('nextPeriod').addEventListener('click', () => setPeriod(periodOf(period.from, 1)));
+    $('fromDate').addEventListener('change', () => {
+      if (!$('fromDate').value) return;
+      setPeriod({ from: $('fromDate').value, to: period.to, label: '自訂期間' });
+    });
+    $('toDate').addEventListener('change', () => {
+      if (!$('toDate').value) return;
+      setPeriod({ from: period.from, to: $('toDate').value, label: '自訂期間' });
+    });
+    $('reloadBtn').addEventListener('click', () => reloadAdmin(false).then(() => toast('已更新')).catch(err => { alert(err.message); handleAdminExpiry(err); }));
+    $('unitFilter').addEventListener('change', renderAdmin);
+
+    function filtered() {
+      const u = $('unitFilter').value;
+      return sortRecs(adminRecords.filter(r => !u || r.unit === u));
+    }
+
+    function renderAdmin() {
+      $('periodLabel').textContent = period.label;
+      $('fromDate').value = period.from; $('toDate').value = period.to;
+      const list = filtered();
+      const sum = summarize(list);
+      $('stCount').textContent = list.length;
+      $('stPeople').textContent = sum.length;
+      $('stDays').textContent = sum.reduce((s, x) => s + x.days, 0);
+      $('stMin').textContent = sum.reduce((s, x) => s + x.minutes, 0);
+
+      let html = `<thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班日期</th><th>班別</th><th>工時</th>
+        <th>開始</th><th>結束</th><th>分鐘</th><th>病歷號 / 原因</th><th>加補時間</th><th>LINE名稱</th><th></th></tr></thead><tbody>`;
+      if (!list.length) html += '<tr><td colspan="13" class="empty">這段期間沒有紀錄</td></tr>';
+      list.forEach(r => {
+        html += `<tr><td>${esc(r.unit)}</td><td>${esc(r.empId)}</td><td>${esc(r.name)}</td><td style="white-space:nowrap">${shortDate(r.date)}</td>
+          <td>${esc(r.shiftCode)}</td><td class="n">${r.shiftHours}</td><td>${esc(r.start)}</td><td>${esc(r.end)}</td><td class="n">${r.minutes}</td>
+          <td class="wr">${esc(reasonText(r))}</td><td class="pre">${esc(r.adjustText)}</td><td style="color:var(--muted)">${esc(r.lineName || '')}</td>
+          <td><button class="ghost" data-aedit="${esc(r.id)}">修改</button></td></tr>`;
+      });
+      $('adminTable').innerHTML = html + '</tbody>';
+
+      let sh = `<thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班天數</th><th>筆數</th><th>加班總分鐘</th><th>加補時數合計</th></tr></thead><tbody>`;
+      if (!sum.length) sh += '<tr><td colspan="7" class="empty">—</td></tr>';
+      sum.forEach(s => sh += `<tr><td>${esc(s.unit)}</td><td>${esc(s.empId)}</td><td>${esc(s.name)}</td><td class="n">${s.days}</td><td class="n">${s.count}</td><td class="n">${s.minutes}</td><td class="n">${fmtAdj(s.adj)}</td></tr>`);
+      $('sumTable').innerHTML = sh + '</tbody>';
+    }
+    $('adminTable').addEventListener('click', e => {
+      const id = e.target.dataset.aedit;
+      if (id) openRecord('admin', adminRecords.find(r => r.id === id));
+    });
+    $('adminAddBtn').addEventListener('click', () => openRecord('admin', null));
+
+    /* ---- 設定 ---- */
+    $('settingsBtn').addEventListener('click', () => {
+      $('stTitle').value = settings.title; $('stSigners').value = settings.signers; $('stDay').value = settings.periodStartDay;
+      $('settingsModal').classList.remove('hidden');
+    });
+    $('stCancel').addEventListener('click', () => $('settingsModal').classList.add('hidden'));
+    $('stSave').addEventListener('click', async () => {
+      try {
+        settings = await api('adminSaveSettings', { token: adminToken, settings: {
+          title: $('stTitle').value.trim(), signers: $('stSigners').value.trim(), periodStartDay: $('stDay').value } });
+        $('settingsModal').classList.add('hidden');
+        store('ot_period', null);
+        setPeriod(periodOf(ymd(new Date())));
+        toast('設定已儲存');
+      } catch (err) { alert(err.message); handleAdminExpiry(err); }
+    });
+
+    /* ---- 列印 ---- */
+    function periodText() {
+      const u = $('unitFilter').value;
+      return `統計期間：${slashDate(period.from)} ～ ${slashDate(period.to)}` + (u ? `　單位：${u}` : '');
+    }
+    function signHtml() {
+      const names = String(settings.signers || '').split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+      return names.length ? `<div class="pr-sign">${names.map(n => `<div>${esc(n)}<span></span></div>`).join('')}</div>` : '';
+    }
+    function buildPrint() {
+      const list = filtered();
+      let h = `<div class="pr-page"><div class="pr-title">${esc(settings.title)}</div>
+        <div class="pr-sub"><span>${esc(periodText())}</span><span>列印日期：${slashDate(ymd(new Date()))}</span></div>
+        <table class="pr"><colgroup>
+          <col style="width:6%"><col style="width:6%"><col style="width:6.5%"><col style="width:8.5%"><col style="width:5%"><col style="width:5%">
+          <col style="width:5.5%"><col style="width:5.5%"><col style="width:6%"><col style="width:31%"><col style="width:15%"></colgroup>
+        <thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班日期</th><th>班別</th><th>班別\n工時</th><th>開始\n時間</th><th>結束\n時間</th>
+        <th>加班\n分鐘</th><th>最後一位病人病歷號/原因</th><th>加補時間</th></tr></thead><tbody>`;
+      list.forEach(r => {
+        h += `<tr><td class="c">${esc(r.unit)}</td><td class="c">${esc(r.empId)}</td><td class="c">${esc(r.name)}</td><td class="c">${slashDate(r.date)}</td>
+          <td class="c">${esc(r.shiftCode)}</td><td class="c">${r.shiftHours}</td><td class="c">${esc(r.start)}</td><td class="c">${esc(r.end)}</td>
+          <td class="c">${r.minutes}</td><td class="wrap">${esc(reasonText(r))}</td><td class="pre c">${esc(r.adjustText)}</td></tr>`;
+      });
+      if (!list.length) h += '<tr><td colspan="11" class="c">（本期間無資料）</td></tr>';
+      h += `</tbody></table>${signHtml()}</div>`;
+
+      if ($('withSummary').checked && list.length) {
+        const sum = summarize(list);
+        const tot = sum.reduce((a, s) => ({ days: a.days + s.days, count: a.count + s.count, minutes: a.minutes + s.minutes }), { days: 0, count: 0, minutes: 0 });
+        h += `<div class="pr-page"><div class="pr-title">${esc(settings.title)}（每人合計）</div>
+          <div class="pr-sub"><span>${esc(periodText())}</span><span></span></div>
+          <table class="pr"><thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班天數</th><th>筆數</th><th>加班總分鐘</th><th>加補時數合計</th></tr></thead><tbody>`;
+        sum.forEach(s => h += `<tr><td class="c">${esc(s.unit)}</td><td class="c">${esc(s.empId)}</td><td class="c">${esc(s.name)}</td>
+          <td class="c">${s.days}</td><td class="c">${s.count}</td><td class="c">${s.minutes}</td><td class="c">${fmtAdj(s.adj)}</td></tr>`);
+        h += `<tr class="tot"><td class="c" colspan="3">合計（${sum.length} 人）</td><td class="c">${tot.days}</td><td class="c">${tot.count}</td><td class="c">${tot.minutes}</td><td></td></tr>`;
+        h += `</tbody></table>${signHtml()}</div>`;
+      }
+      $('printArea').innerHTML = h;
+    }
+    $('printBtn').addEventListener('click', () => { buildPrint(); setTimeout(() => window.print(), 50); });
+
+    /* ---- 匯出 Excel ---- */
+    function loadXlsx() {
+      if (window.XLSX) return Promise.resolve();
+      return new Promise((ok, bad) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+        s.onload = ok; s.onerror = () => bad(new Error('無法載入 Excel 元件，請檢查網路'));
+        document.head.appendChild(s);
+      });
+    }
+    $('xlsxBtn').addEventListener('click', async () => {
+      try {
+        await loadXlsx();
+        const list = filtered();
+        const head = ['單位', '員工代號', '姓名', '加班日期', '班別', '班別工時', '開始時間', '結束時間', '加班時數分鐘', '最後一位病人病歷號/原因', '加補時間'];
+        const aoa = [[settings.title], [periodText()], head];
+        list.forEach(r => aoa.push([r.unit, isNaN(r.empId) ? r.empId : Number(r.empId), r.name, slashDate(r.date),
+          isNaN(r.shiftCode) ? r.shiftCode : Number(r.shiftCode), r.shiftHours, r.start, r.end, r.minutes, reasonText(r), r.adjustText]));
+        aoa.push([]);
+        const names = String(settings.signers || '').split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+        const signRow = new Array(11).fill('');
+        names.forEach((n, i) => signRow[Math.floor(i * 11 / names.length)] = n);
+        aoa.push(signRow);
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } }];
+        ws['!cols'] = [8, 9, 9, 12, 7, 8, 9, 9, 10, 46, 18].map(w => ({ wch: w }));
+        const sum = summarize(list);
+        const ws2 = XLSX.utils.aoa_to_sheet([['單位', '員工代號', '姓名', '加班天數', '筆數', '加班總分鐘', '加補時數合計']]
+          .concat(sum.map(s => [s.unit, isNaN(s.empId) ? s.empId : Number(s.empId), s.name, s.days, s.count, s.minutes, s.adj || ''])));
+        ws2['!cols'] = [8, 9, 9, 9, 6, 11, 12].map(w => ({ wch: w }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '加班明細');
+        XLSX.utils.book_append_sheet(wb, ws2, '每人合計');
+        const toD = parseYmd(period.to);
+        const tag = period.label === '自訂期間' ? period.from + '_' + period.to : (toD.getFullYear() - 1911) + String(toD.getMonth() + 1).padStart(2, '0');
+        const blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })],
+          { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${settings.title}_${tag}.xlsx`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      } catch (err) { alert(err.message); }
+    });
+  </script>
+</body>
+</html>
