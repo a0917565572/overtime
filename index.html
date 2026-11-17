@@ -55,6 +55,8 @@
     .adj-row .t > * { min-width: 0; }
     .adj-row .o { display: flex; gap: 6px; margin-top: 6px; }
     .adj-row .o select { flex: 1; }
+    input.t24 { font-variant-numeric: tabular-nums; letter-spacing: .5px; }
+    input.t24.bad { border-color: var(--danger); background: #fff5f5; }
     .adj-row .o button { flex: 0 0 auto; }
     .empty { text-align: center; color: var(--muted); padding: 24px 0; }
     .foot { text-align: center; margin-top: 30px; }
@@ -133,7 +135,9 @@
         </div>
       </div>
       <button class="pri big" id="newRecBtn">＋ 新增加班紀錄</button>
-      <div class="hint" style="margin:8px 4px 0">本表只登記<b>未滿 30 分鐘</b>的零星加班。填錯可以自己修改或刪除。</div>
+      <div class="hint" style="margin:8px 4px 0">本表只登記<b>未滿 30 分鐘</b>的零星加班。時間請用 24 小時制，例如 1730。填錯可以自己修改或刪除。</div>
+      <div class="warnbox" style="margin-top:8px">⚠️ 此表格上所記錄的積、補時數，<b>仍需上電腦 key OF00</b>。此登記表僅提供核對，<b>不代表協助申請</b>。</div>
+      <div class="period-h" style="margin-top:22px"><h3>📋 我的加班紀錄</h3><span>點「修改」可更正或刪除</span></div>
       <div id="myList"></div>
       <div class="foot"><button class="ghost" id="toAdminBtn">管理者登入</button></div>
     </div>
@@ -160,6 +164,10 @@
             <button id="nextPeriod">▶</button>
             <input type="date" id="fromDate"> ～ <input type="date" id="toDate">
             <select id="unitFilter"></select>
+            <select id="sortMode" title="排序方式">
+              <option value="date">排序：日期 → 單位 → 人員</option>
+              <option value="person">排序：單位 → 人員 → 日期</option>
+            </select>
             <button id="reloadBtn">重新整理</button>
           </div>
           <div class="stats" style="margin-top:12px">
@@ -231,8 +239,8 @@
           <div><label class="f">班別 <b>*</b></label><select id="rfShift"></select></div>
         </div>
         <div class="row">
-          <div><label class="f">開始時間 <b>*</b></label><input type="time" id="rfStart" step="60"></div>
-          <div><label class="f">結束時間 <b>*</b></label><input type="time" id="rfEnd" step="60"></div>
+          <div><label class="f">開始時間 <b>*</b></label><input id="rfStart" class="t24" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="例：1200"></div>
+          <div><label class="f">結束時間 <b>*</b></label><input id="rfEnd" class="t24" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="例：1215"></div>
         </div>
         <div style="margin-top:8px" id="rfMinutes"></div>
       </div>
@@ -252,7 +260,8 @@
 
       <div class="card">
         <h2>加補時間（選填）</h2>
-        <div class="hint" style="margin-bottom:8px">當天有提早上班、延後下班或少上的時段，請在這裡加一段。</div>
+        <div class="hint" style="margin-bottom:8px">當天有提早上班、延後下班或少上的時段，請在這裡加一段。時數會自動計算。</div>
+        <div class="warnbox" style="margin:0 0 8px">⚠️ 此表格上所記錄的積、補時數，<b>仍需上電腦 key OF00</b>。此登記表僅提供核對，<b>不代表協助申請</b>。</div>
         <div id="adjList"></div>
         <button id="adjAdd">＋ 新增一段</button>
         <div class="hint" id="adjPreview"></div>
@@ -336,6 +345,20 @@
       if (ch.length === 2) return ch[0] + '0';
       return ch[0] + '0'.repeat(ch.length - 2) + ch[ch.length - 1];
     }
+    /** 24 小時制：1730、930、17:30、17.30 → "17:30"；不合法回傳 "" */
+    function normT(v) {
+      const d = String(v || '').replace(/[^\d]/g, '');
+      if (d.length < 3 || d.length > 4) return '';
+      const h = +d.slice(0, d.length - 2), m = +d.slice(-2);
+      if (h > 23 || m > 59) return '';
+      return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+    document.addEventListener('focusout', e => {
+      if (e.target.classList && e.target.classList.contains('t24')) {
+        const n = normT(e.target.value); if (n) e.target.value = n;
+        updateFormPreview();
+      }
+    });
     const toMin = t => { const p = String(t).split(':'); return (+p[0]) * 60 + (+p[1]); };
     const fmtNum = n => String(Math.round(n * 100) / 100);
     function adjustText(list) {
@@ -371,7 +394,12 @@
     }
 
     function unitIndex(u) { const i = units.indexOf(u); return i < 0 ? 999 : i; }
-    function sortRecs(list) {
+    function sortRecs(list, mode) {
+      if (mode === 'date') return list.slice().sort((a, b) =>
+        a.date.localeCompare(b.date) ||
+        unitIndex(a.unit) - unitIndex(b.unit) ||
+        (Number(a.empId) || 0) - (Number(b.empId) || 0) ||
+        a.start.localeCompare(b.start));
       return list.slice().sort((a, b) =>
         unitIndex(a.unit) - unitIndex(b.unit) ||
         String(a.unit).localeCompare(String(b.unit)) ||
@@ -483,6 +511,7 @@
       try {
         const d = await api('saveProfile', { profile: p });
         profile = d.profile;
+        if (d.records) myRecords = d.records;
         $('profileModal').classList.add('hidden');
         renderStaff();
         toast('個人資料已儲存');
@@ -526,9 +555,9 @@
     function addAdjRow(a) {
       const div = document.createElement('div');
       div.className = 'adj-row';
-      div.innerHTML = `<div class="t"><input type="time" class="aF" step="60"><span>～</span><input type="time" class="aT" step="60"></div>
+      div.innerHTML = `<div class="t"><input class="t24 aF" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="例：1200"><span>～</span><input class="t24 aT" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="例：1230"></div>
         <div class="o"><select class="aS"><option value="1">＋ 加（多上的時間）</option><option value="-1">－ 減（少上的時間）</option></select>
-        <button type="button" class="aX danger">移除</button></div>`;
+        <button type="button" class="aX danger">移除</button></div><div class="aR hint"></div>`;
       if (a) { div.querySelector('.aF').value = a.from; div.querySelector('.aT').value = a.to; div.querySelector('.aS').value = String(a.sign < 0 ? -1 : 1); }
       $('adjList').appendChild(div);
     }
@@ -537,14 +566,17 @@
 
     function readAdj() {
       return Array.from($('adjList').children).map(div => ({
-        from: div.querySelector('.aF').value, to: div.querySelector('.aT').value, sign: Number(div.querySelector('.aS').value)
+        from: normT(div.querySelector('.aF').value), to: normT(div.querySelector('.aT').value), sign: Number(div.querySelector('.aS').value),
+        raw: div.querySelector('.aF').value.trim() + div.querySelector('.aT').value.trim()
       }));
     }
     function updateFormPreview() {
       $('rfErr').textContent = '';
       // 加班分鐘
-      const s = $('rfStart').value, e = $('rfEnd').value, box = $('rfMinutes');
-      if (s && e) {
+      document.querySelectorAll('#recModal input.t24').forEach(el => el.classList.toggle('bad', !!el.value.trim() && !normT(el.value)));
+      const s = normT($('rfStart').value), e = normT($('rfEnd').value), box = $('rfMinutes');
+      if (($('rfStart').value.trim() && !s) || ($('rfEnd').value.trim() && !e)) box.innerHTML = '<span class="err">時間格式不對，請用 24 小時制 4 碼，例如 1730</span>';
+      else if (s && e) {
         const m = toMin(e) - toMin(s);
         if (m <= 0) box.innerHTML = '<span class="err">結束時間要晚於開始時間</span>';
         else if (m >= 30) box.innerHTML = `<div class="warnbox">這筆是 ${m} 分鐘。本表只登記<b>未滿 30 分鐘</b>的零星加班，30 分鐘以上請依正式加班流程申請。</div>`;
@@ -558,6 +590,13 @@
       const rt = reasonText({ chartNo: $('rfChart').value.trim(), patient: maskName(pn), reason: $('rfReason').value.trim() });
       $('rfPreview').innerHTML = rt ? '列印顯示：' + esc(rt) : '';
       // 加補時間
+      Array.from($('adjList').children).forEach(div => {
+        const f = normT(div.querySelector('.aF').value), t = normT(div.querySelector('.aT').value), sg = Number(div.querySelector('.aS').value);
+        const r = div.querySelector('.aR');
+        if (f && t && toMin(t) > toMin(f)) r.innerHTML = `自動計算：<span class="pill">${sg < 0 ? '－' : '＋'}${fmtNum((toMin(t) - toMin(f)) / 60)} 小時</span>`;
+        else if (f && t) r.innerHTML = '<span class="err">結束要晚於開始</span>';
+        else r.textContent = '';
+      });
       const adj = readAdj().filter(a => a.from && a.to && toMin(a.to) > toMin(a.from));
       $('adjPreview').innerHTML = adj.length ? '列印顯示：' + esc(adjustText(adj)).replace(/\n/g, '<br>') : '';
     }
@@ -568,7 +607,7 @@
       const rec = {
         id: editing.rec ? editing.rec.id : '',
         date: $('rfDate').value, shiftCode: $('rfShift').value,
-        start: $('rfStart').value, end: $('rfEnd').value,
+        start: normT($('rfStart').value), end: normT($('rfEnd').value),
         chartNo: $('rfChart').value.trim(), patient: maskName($('rfPatient').value),
         reason: $('rfReason').value.trim(), adjust: readAdj()
       };
@@ -577,15 +616,17 @@
       if (editing.mode === 'admin' && (!rec.unit || !rec.empId || !rec.name)) return '請填寫單位、員工代號、姓名';
       if (!rec.date) return '請選擇加班日期';
       if (!rec.shiftCode) return '請選擇班別';
+      if (($('rfStart').value.trim() && !rec.start) || ($('rfEnd').value.trim() && !rec.end)) return '時間格式不對，請用 24 小時制 4 碼，例如 1730';
       if (!rec.start || !rec.end) return '請填寫開始與結束時間';
       const m = toMin(rec.end) - toMin(rec.start);
       if (m <= 0) return '結束時間要晚於開始時間';
       if (m >= 30) return '本表只登記未滿 30 分鐘的零星加班';
       if (!rec.chartNo && !rec.reason) return '病歷號和原因至少填一項';
       for (const a of rec.adjust) {
-        if (!a.from || !a.to) return '加補時間的起訖時間沒填完整（不需要的話按 ✕ 移除）';
+        if (!a.from || !a.to) return a.raw && a.raw.length ? '加補時間格式不對或沒填完整，請用 24 小時制 4 碼，例如 1200～1230（不需要的話按「移除」）' : '加補時間沒填（不需要的話按「移除」）';
         if (toMin(a.to) <= toMin(a.from)) return '加補時間的結束要晚於開始';
       }
+      rec.adjust = rec.adjust.map(a => ({ from: a.from, to: a.to, sign: a.sign }));
       return rec;
     }
 
@@ -603,8 +644,9 @@
           upsert(myRecords, saved);
           renderStaff();
         }
+        const wasAdmin = editing.mode === 'admin';
         closeRecord();
-        toast('已儲存');
+        toast(wasAdmin ? '已儲存' : '已儲存，積補時數記得上電腦 key OF00');
       } catch (err) { $('rfErr').textContent = err.message; handleAdminExpiry(err); }
       $('rfSave').disabled = false;
     });
@@ -703,10 +745,12 @@
     });
     $('reloadBtn').addEventListener('click', () => reloadAdmin(false).then(() => toast('已更新')).catch(err => { alert(err.message); handleAdminExpiry(err); }));
     $('unitFilter').addEventListener('change', renderAdmin);
+    $('sortMode').value = load('ot_sort') || 'date';
+    $('sortMode').addEventListener('change', () => { store('ot_sort', $('sortMode').value); renderAdmin(); });
 
     function filtered() {
       const u = $('unitFilter').value;
-      return sortRecs(adminRecords.filter(r => !u || r.unit === u));
+      return sortRecs(adminRecords.filter(r => !u || r.unit === u), $('sortMode').value);
     }
 
     function renderAdmin() {
