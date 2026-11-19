@@ -137,6 +137,7 @@
       <button class="pri big" id="newRecBtn">＋ 新增加班紀錄</button>
       <div class="hint" style="margin:8px 4px 0">本表只登記<b>未滿 30 分鐘</b>的零星加班。時間請用 24 小時制，例如 1730。填錯可以自己修改或刪除。</div>
       <div class="warnbox" style="margin-top:8px">⚠️ 此表格上所記錄的積、補時數，<b>仍需上電腦 key OF00</b>。此登記表僅提供核對，<b>不代表協助申請</b>。</div>
+      <div class="card" id="deadlineCard" style="margin-top:12px"></div>
       <div class="period-h" style="margin-top:22px"><h3>📋 我的加班紀錄</h3><span>點「修改」可更正或刪除</span></div>
       <div id="myList"></div>
       <div class="foot"><button class="ghost" id="toAdminBtn">管理者登入</button></div>
@@ -288,6 +289,26 @@
         <input id="stDay" type="number" min="1" max="28">
         <div class="hint">例如填 21：統計期間就是 9/21～10/20。<br>班別代號和單位請直接到試算表的「班別」「單位」分頁修改。</div>
       </div>
+      <div class="card">
+        <h2>⏰ 截止時間</h2>
+        <div class="row">
+          <div><label class="f">期間結束後第幾天截止</label><input id="stLockDays" type="number" min="0" max="15"></div>
+          <div><label class="f">截止時刻（24 小時制）</label><input id="stLockTime" class="t24" inputmode="numeric" maxlength="5" placeholder="2355"></div>
+        </div>
+        <div class="hint" id="stLockHint"></div>
+      </div>
+      <div class="card">
+        <h2>🔔 LINE 群組自動提醒</h2>
+        <div class="row">
+          <div><label class="f">每月幾號提醒（可填多個，用逗號隔開）</label><input id="stRemindDays" placeholder="20"></div>
+          <div><label class="f">幾點發送（6～22）</label><input id="stRemindHour" type="number" min="6" max="22"></div>
+        </div>
+        <div id="remStatus" class="hint" style="margin-top:10px"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="remTest" style="flex:0 0 auto">發送測試提醒</button>
+          <button id="remUnbind" class="danger" style="flex:0 0 auto">解除綁定群組</button>
+        </div>
+      </div>
       <div class="sheet-f">
         <button id="stCancel">取消</button>
         <button class="pri" id="stSave">儲存</button>
@@ -310,7 +331,8 @@
     const ADMIN_ONLY = params.get('admin') === '1';
 
     let idToken = null, lineName = '';
-    let shifts = [], units = [], settings = { title: '', signers: '', periodStartDay: 21 };
+    let shifts = [], units = [], settings = { title: '', signers: '', periodStartDay: 21, lockDays: 1, lockTime: '23:55' };
+    let serverNow = '', reminder = null;
     let profile = null, myRecords = [];
     let adminToken = null, adminRecords = [], period = null;
     let editing = null;          // { mode: 'staff'|'admin', rec }
@@ -389,6 +411,18 @@
       const to = new Date(y, m + 1, sd - 1);
       return { from: ymd(from), to: ymd(to), label: periodLabel(to) };
     }
+    function setNow(s) { if (s) serverNow = String(s).slice(0, 16); }
+    function nowStr() { return serverNow || (ymd(new Date()) + ' ' + new Date().toTimeString().slice(0, 5)); }
+    function deadlineOf(p) {
+      const d = parseYmd(p.to); d.setDate(d.getDate() + (Number(settings.lockDays) || 0));
+      return ymd(d) + ' ' + (settings.lockTime || '23:55');
+    }
+    function isLocked(p) { return nowStr() >= deadlineOf(p); }
+    function closingPeriod() {
+      const cur = periodOf(nowStr().slice(0, 10)), prev = periodOf(cur.from, -1);
+      return isLocked(prev) ? cur : prev;
+    }
+    function fmtDl(dl) { const d = parseYmd(dl.slice(0, 10)); return (d.getMonth() + 1) + '/' + d.getDate() + '（' + WEEK[d.getDay()] + '）' + dl.slice(11); }
     function periodLabel(toDate) {
       return (toDate.getFullYear() - 1911) + '年' + (toDate.getMonth() + 1) + '月';
     }
@@ -448,7 +482,7 @@
         }
         $('loadingText').textContent = '正在載入資料...';
         const d = await api('init');
-        lineName = d.me.lineName; shifts = d.shifts; units = d.units; settings = d.settings;
+        lineName = d.me.lineName; shifts = d.shifts; units = d.units; settings = d.settings; setNow(d.now);
         profile = d.profile; myRecords = d.records;
         $('meChip').textContent = lineName || '未登入 LINE';
         fillShiftSelect();
@@ -466,6 +500,9 @@
       $('profileText').innerHTML = profile
         ? `<b>${esc(profile.name)}</b>　${esc(profile.unit)}｜員工代號 ${esc(profile.empId)}`
         : '<span class="err">尚未填寫個人資料</span>';
+      const cp = closingPeriod(), cdl = deadlineOf(cp);
+      $('deadlineCard').innerHTML = `⏰ 本期 <b>${cp.label}</b>（${slashDate(cp.from).slice(5)}～${slashDate(cp.to).slice(5)}）
+        將於 <b class="err">${fmtDl(cdl)}</b> 截止，截止後就不能再新增或修改。`;
       const box = $('myList');
       if (!myRecords.length) { box.innerHTML = '<div class="empty">還沒有加班紀錄</div>'; return; }
       const groups = new Map();
@@ -477,12 +514,14 @@
       box.innerHTML = Array.from(groups.values()).map(({ p, list }) => {
         const mins = list.reduce((s, r) => s + (Number(r.minutes) || 0), 0);
         const days = new Set(list.map(r => r.date)).size;
+        const locked = isLocked(p);
         return `<div class="period-h"><h3>${p.label}　<span>${slashDate(p.from).slice(5)}～${slashDate(p.to).slice(5)}</span></h3>
           <span>${days} 天・共 ${mins} 分鐘</span></div>` +
+          (locked ? `<div class="hint" style="margin:-4px 4px 8px">🔒 已於 ${fmtDl(deadlineOf(p))} 截止，需要更正請找管理者</div>` : '') +
           list.map(r => `<div class="rec">
             <div class="top"><span class="d">${shortDate(r.date)}　${esc(r.start)}–${esc(r.end)}</span><span class="m">${r.minutes} 分</span></div>
             <div class="s">班別 ${esc(r.shiftCode)}・${esc(reasonText(r))}${r.adjustText ? '\n加補：' + esc(r.adjustText).replace(/\n/g, '、') : ''}</div>
-            <div class="acts"><button class="ghost" data-edit="${esc(r.id)}">修改</button></div>
+            <div class="acts">${locked ? '<span class="hint">🔒 已截止</span>' : `<button class="ghost" data-edit="${esc(r.id)}">修改</button>`}</div>
           </div>`).join('');
       }).join('');
     }
@@ -615,6 +654,10 @@
       // 前端先檢查一次
       if (editing.mode === 'admin' && (!rec.unit || !rec.empId || !rec.name)) return '請填寫單位、員工代號、姓名';
       if (!rec.date) return '請選擇加班日期';
+      if (editing.mode !== 'admin') {
+        const pp = periodOf(rec.date);
+        if (isLocked(pp)) return `${pp.label}（${slashDate(pp.from).slice(5)}～${slashDate(pp.to).slice(5)}）已於 ${fmtDl(deadlineOf(pp))} 截止，不能再登記。需要更正請找管理者。`;
+      }
       if (!rec.shiftCode) return '請選擇班別';
       if (($('rfStart').value.trim() && !rec.start) || ($('rfEnd').value.trim() && !rec.end)) return '時間格式不對，請用 24 小時制 4 碼，例如 1730';
       if (!rec.start || !rec.end) return '請填寫開始與結束時間';
@@ -722,7 +765,7 @@
           period = p; d = await api('adminList', { token: adminToken, from: period.from, to: period.to });
         }
       }
-      adminRecords = d.records;
+      adminRecords = d.records; setNow(d.now); reminder = d.reminder || null;
       fillShiftSelect();
       const keep = $('unitFilter').value;
       fillSelect($('unitFilter'), [{ value: '', text: '全部單位' }].concat(units.map(u => ({ value: u, text: u }))));
@@ -755,6 +798,10 @@
 
     function renderAdmin() {
       $('periodLabel').textContent = period.label;
+      if (period.label !== '自訂期間') {
+        const dl = deadlineOf(period);
+        $('periodLabel').textContent += isLocked(period) ? '（🔒 已截止）' : `（${fmtDl(dl)} 截止）`;
+      }
       $('fromDate').value = period.from; $('toDate').value = period.to;
       const list = filtered();
       const sum = summarize(list);
@@ -788,13 +835,48 @@
     /* ---- 設定 ---- */
     $('settingsBtn').addEventListener('click', () => {
       $('stTitle').value = settings.title; $('stSigners').value = settings.signers; $('stDay').value = settings.periodStartDay;
+      $('stLockDays').value = settings.lockDays; $('stLockTime').value = settings.lockTime || '23:55';
+      $('stRemindDays').value = settings.remindDays || ''; $('stRemindHour').value = settings.remindHour || 9;
+      renderRemStatus(); updateLockHint();
       $('settingsModal').classList.remove('hidden');
     });
     $('stCancel').addEventListener('click', () => $('settingsModal').classList.add('hidden'));
+    function updateLockHint() {
+      const tmp = Object.assign({}, settings, { lockDays: $('stLockDays').value, lockTime: normT($('stLockTime').value) || '23:55' });
+      const save = settings; settings = tmp;
+      const p = closingPeriod();
+      $('stLockHint').textContent = `例：${p.label}（${slashDate(p.from).slice(5)}～${slashDate(p.to).slice(5)}）會在 ${fmtDl(deadlineOf(p))} 截止。截止後同仁不能新增、修改、刪除該期紀錄，管理者仍可修改。`;
+      settings = save;
+    }
+    ['stLockDays', 'stLockTime'].forEach(id => $(id).addEventListener('input', updateLockHint));
+    function renderRemStatus() {
+      const r = reminder || {};
+      const ok = '<span class="ok">✅</span>', no = '<span class="err">✗</span>';
+      $('remStatus').innerHTML =
+        `${r.hasToken ? ok : no} 提醒機器人 token ${r.hasToken ? '已設定' : '尚未設定（Code.gs 的 LINE_BOT_TOKEN）'}<br>` +
+        `${r.hasTrigger ? ok : no} 每日排程 ${r.hasTrigger ? '已開啟' : '尚未開啟（在 Apps Script 執行「設定自動提醒」）'}<br>` +
+        `${r.group ? ok : no} 綁定群組：${r.group ? '<b>' + esc(r.group.name || '（未命名群組）') + '</b>' : '尚未綁定（把機器人加入群組，在群組輸入「綁定加班提醒」）'}`;
+      $('remUnbind').disabled = !r.group;
+      $('remTest').disabled = !(r.hasToken && r.group);
+    }
+    $('remTest').addEventListener('click', async () => {
+      if (!confirm('要現在發一則「測試提醒」到群組「' + (reminder.group.name || '') + '」嗎？')) return;
+      try { await api('adminReminderTest', { token: adminToken }); toast('已發送測試提醒'); }
+      catch (err) { alert(err.message); handleAdminExpiry(err); }
+    });
+    $('remUnbind').addEventListener('click', async () => {
+      if (!confirm('確定解除綁定？解除後就不會再自動提醒，直到重新在群組輸入「綁定加班提醒」。')) return;
+      try { reminder = await api('adminReminderUnbind', { token: adminToken }); renderRemStatus(); toast('已解除綁定'); }
+      catch (err) { alert(err.message); handleAdminExpiry(err); }
+    });
     $('stSave').addEventListener('click', async () => {
       try {
+        const lt = normT($('stLockTime').value);
+        if (!lt) { alert('截止時刻格式不對，請用 24 小時制，例如 2355'); return; }
         settings = await api('adminSaveSettings', { token: adminToken, settings: {
-          title: $('stTitle').value.trim(), signers: $('stSigners').value.trim(), periodStartDay: $('stDay').value } });
+          title: $('stTitle').value.trim(), signers: $('stSigners').value.trim(), periodStartDay: $('stDay').value,
+          lockDays: $('stLockDays').value, lockTime: lt,
+          remindDays: $('stRemindDays').value, remindHour: $('stRemindHour').value } });
         $('settingsModal').classList.add('hidden');
         store('ot_period', null);
         setPeriod(periodOf(ymd(new Date())));
