@@ -249,13 +249,13 @@
       <div class="card">
         <h2>最後一位病人 / 原因</h2>
         <div class="row">
-          <div><label class="f">病歷號</label><input id="rfChart" inputmode="numeric" placeholder="例：729389"></div>
+          <div><label class="f">病歷號 <b>*</b></label><input id="rfChart" inputmode="numeric" placeholder="例：729389"></div>
           <div><label class="f">病人姓名（選填）</label><input id="rfPatient" placeholder="例：王家棉"></div>
         </div>
         <div class="hint" id="rfPatientHint">為了個資保護，姓名只會存成遮罩後的樣子，例如：王家棉 → 王0棉</div>
-        <label class="f">原因 / 處理事項</label>
+        <label class="f">原因 / 處理事項 <b>*</b></label>
         <textarea id="rfReason" placeholder="例：協助李醫師做胃大鏡、核對檢體"></textarea>
-        <div class="hint">病歷號和原因至少填一項。</div>
+        <div class="hint">病歷號和原因<b>都要填寫</b>。</div>
         <div class="hint" id="rfPreview"></div>
       </div>
 
@@ -664,7 +664,8 @@
       const m = toMin(rec.end) - toMin(rec.start);
       if (m <= 0) return '結束時間要晚於開始時間';
       if (m >= 30) return '本表只登記未滿 30 分鐘的零星加班';
-      if (!rec.chartNo && !rec.reason) return '病歷號和原因至少填一項';
+      if (!rec.chartNo) return '請填寫最後一位病人的病歷號';
+      if (!rec.reason) return '請填寫加班原因 / 處理事項';
       for (const a of rec.adjust) {
         if (!a.from || !a.to) return a.raw && a.raw.length ? '加補時間格式不對或沒填完整，請用 24 小時制 4 碼，例如 1200～1230（不需要的話按「移除」）' : '加補時間沒填（不需要的話按「移除」）';
         if (toMin(a.to) <= toMin(a.from)) return '加補時間的結束要晚於開始';
