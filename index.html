@@ -211,6 +211,8 @@
         <input id="pfEmp" inputmode="numeric" placeholder="例：1477">
         <label class="f">姓名 <b>*</b></label>
         <input id="pfName" placeholder="請填本名">
+        <label class="f">身分 <b>*</b></label>
+        <select id="pfType"><option value="">請選擇</option><option value="正式">正式</option><option value="兼職">兼職</option></select>
         <div class="hint err" id="pfErr"></div>
       </div>
       <div class="sheet-f">
@@ -231,6 +233,7 @@
           <div><label class="f">單位 <b>*</b></label><select id="rfUnit"></select></div>
           <div><label class="f">員工代號 <b>*</b></label><input id="rfEmp" inputmode="numeric"></div>
           <div><label class="f">姓名 <b>*</b></label><input id="rfName"></div>
+          <div><label class="f">身分</label><select id="rfType"><option value="">（依個人資料）</option><option value="正式">正式</option><option value="兼職">兼職</option></select></div>
         </div>
       </div>
 
@@ -247,15 +250,16 @@
       </div>
 
       <div class="card">
-        <h2>最後一位病人 / 原因</h2>
+        <h2>加班理由</h2>
+        <label class="f">加班理由 <b>*</b></label>
+        <textarea id="rfReason" placeholder="例：整理醫囑、ERCP清潔工作、處理櫃台事務、協助醫師做胃鏡"></textarea>
+        <label class="f">相關病人（選填，與病人有關時再填）</label>
         <div class="row">
-          <div><label class="f">病歷號 <b>*</b></label><input id="rfChart" inputmode="numeric" placeholder="例：729389"></div>
-          <div><label class="f">病人姓名（選填）</label><input id="rfPatient" placeholder="例：王家棉"></div>
+          <div><label class="f">病歷號</label><input id="rfChart" inputmode="numeric" placeholder="例：729389"></div>
+          <div><label class="f">病人姓名</label><input id="rfPatient" placeholder="例：王家棉"></div>
         </div>
         <div class="hint" id="rfPatientHint">為了個資保護，姓名只會存成遮罩後的樣子，例如：王家棉 → 王0棉</div>
-        <label class="f">原因 / 處理事項 <b>*</b></label>
-        <textarea id="rfReason" placeholder="例：協助李醫師做胃大鏡、核對檢體"></textarea>
-        <div class="hint">病歷號和原因<b>都要填寫</b>。</div>
+        <div class="hint">只有<b>加班理由</b>必填；不是處理病人的事（例如整理環境、清潔器械、行政事務），病歷號可以不填。</div>
         <div class="hint" id="rfPreview"></div>
       </div>
 
@@ -300,12 +304,14 @@
       <div class="card">
         <h2>🔔 LINE 群組自動提醒</h2>
         <div class="row">
-          <div><label class="f">每月幾號提醒（可填多個，用逗號隔開）</label><input id="stRemindDays" placeholder="20"></div>
+          <div><label class="f">每月幾號提醒「登記截止」（可填多個，用逗號隔開）</label><input id="stRemindDays" placeholder="20"></div>
           <div><label class="f">幾點發送（6～22）</label><input id="stRemindHour" type="number" min="6" max="22"></div>
         </div>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="stMonthEnd" style="width:auto">每月最後一天另外提醒「上電腦 key OF00 申請積補時數」（同一時間發送）</label>
         <div id="remStatus" class="hint" style="margin-top:10px"></div>
         <div class="row" style="margin-top:10px">
-          <button id="remTest" style="flex:0 0 auto">發送測試提醒</button>
+          <button id="remTest" style="flex:0 0 auto">測試：登記截止提醒</button>
+          <button id="remTest2" style="flex:0 0 auto">測試：月底積補提醒</button>
           <button id="remUnbind" class="danger" style="flex:0 0 auto">解除綁定群組</button>
         </div>
       </div>
@@ -348,6 +354,27 @@
     function store(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} }
     function load(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
 
+    // LINE 登入憑證會過期（頁面開著很久沒關時）→ 自動重新登入
+    function tokenExpired() {
+      try { const d = window.liff && liff.getDecodedIDToken(); return !!(d && d.exp * 1000 < Date.now() + 60000); }
+      catch (e) { return false; }
+    }
+    function relogin() {
+      toast('LINE 登入逾時，正在重新登入…');
+      try { liff.logout(); } catch (e) {}
+      liff.login({ redirectUri: location.href.split('#')[0] });
+    }
+    function needRelogin() {
+      if (ADMIN_ONLY || !LIFF_ID || !window.liff || !idToken) return false;
+      if (tokenExpired()) { relogin(); return true; }
+      return false;
+    }
+    function showFormErr(msg) {
+      $('rfErr').textContent = msg;
+      toast(msg);
+      setTimeout(() => $('rfErr').scrollIntoView({ behavior: 'smooth', block: 'center' }), 30);
+    }
+
     async function api(action, payload = {}) {
       if (!API_URL) throw new Error('尚未完成設定：index.html 的 API_URL 還沒填');
       const res = await fetch(API_URL, {
@@ -356,6 +383,10 @@
         body: JSON.stringify(Object.assign({ action, idToken }, payload))
       });
       const j = await res.json();
+      if (!j.ok && /LINE 登入已過期/.test(j.error || '') && !ADMIN_ONLY && LIFF_ID && window.liff) {
+        relogin();
+        throw new Error('LINE 登入逾時，正在重新登入，請登入後再操作一次');
+      }
       if (!j.ok) throw new Error(j.error || '發生錯誤');
       return j.data;
     }
@@ -444,8 +475,8 @@
     function summarize(list) {
       const map = new Map();
       sortRecs(list).forEach(r => {
-        const k = r.unit + '|' + r.empId + '|' + r.name;
-        if (!map.has(k)) map.set(k, { unit: r.unit, empId: r.empId, name: r.name, days: new Set(), count: 0, minutes: 0, adj: 0 });
+        const k = r.unit + '|' + r.empId + '|' + r.name + '|' + (r.empType || '');
+        if (!map.has(k)) map.set(k, { unit: r.unit, empId: r.empId, name: r.name, empType: r.empType || '', days: new Set(), count: 0, minutes: 0, adj: 0 });
         const s = map.get(k);
         s.days.add(r.date); s.count++; s.minutes += Number(r.minutes) || 0;
         (r.adjust || []).forEach(a => s.adj += a.sign * (toMin(a.to) - toMin(a.from)) / 60);
@@ -490,6 +521,7 @@
         $('staffView').classList.remove('hidden');
         $('loading').classList.add('hidden');
         if (!profile) openProfile(true);
+        else if (!profile.empType) openProfile(true, '系統新增「身分」欄位，請補選正式或兼職後儲存。');
       } catch (err) {
         showFatal('無法連線加班登記系統', err.message);
       }
@@ -498,7 +530,7 @@
     /* ---------------- 一般人員畫面 ---------------- */
     function renderStaff() {
       $('profileText').innerHTML = profile
-        ? `<b>${esc(profile.name)}</b>　${esc(profile.unit)}｜員工代號 ${esc(profile.empId)}`
+        ? `<b>${esc(profile.name)}</b>　${esc(profile.unit)}｜員工代號 ${esc(profile.empId)}｜${profile.empType ? esc(profile.empType) : '<span class="err">未選身分</span>'}`
         : '<span class="err">尚未填寫個人資料</span>';
       const cp = closingPeriod(), cdl = deadlineOf(cp);
       $('deadlineCard').innerHTML = `⏰ 本期 <b>${cp.label}</b>（${slashDate(cp.from).slice(5)}～${slashDate(cp.to).slice(5)}）
@@ -527,25 +559,31 @@
     }
     $('myList').addEventListener('click', e => {
       const id = e.target.dataset.edit;
-      if (id) openRecord('staff', myRecords.find(r => r.id === id));
+      if (id && !needRelogin()) openRecord('staff', myRecords.find(r => r.id === id));
     });
-    $('newRecBtn').addEventListener('click', () => profile ? openRecord('staff', null) : openProfile(true));
+    $('newRecBtn').addEventListener('click', () => {
+      if (!profile) return openProfile(true);
+      if (!profile.empType) return openProfile(true, '請先補選身分（正式／兼職）。');
+      if (needRelogin()) return;
+      openRecord('staff', null);
+    });
     $('editProfileBtn').addEventListener('click', () => openProfile(false));
     $('toAdminBtn').addEventListener('click', enterAdmin);
 
-    function openProfile(firstTime) {
+    function openProfile(firstTime, note) {
       fillUnitSelect($('pfUnit'), '請選擇單位');
       $('pfUnit').value = profile ? profile.unit : '';
       $('pfEmp').value = profile ? profile.empId : '';
       $('pfName').value = profile ? profile.name : '';
-      $('pfErr').textContent = '';
-      $('pfCancel').classList.toggle('hidden', !!firstTime && !profile);
+      $('pfType').value = profile ? (profile.empType || '') : '';
+      $('pfErr').textContent = note || '';
+      $('pfCancel').classList.toggle('hidden', !!firstTime && (!profile || !profile.empType));
       $('profileModal').classList.remove('hidden');
     }
     $('pfCancel').addEventListener('click', () => $('profileModal').classList.add('hidden'));
     $('pfSave').addEventListener('click', async () => {
-      const p = { unit: $('pfUnit').value, empId: $('pfEmp').value.trim(), name: $('pfName').value.trim() };
-      if (!p.unit || !p.empId || !p.name) { $('pfErr').textContent = '三個欄位都要填'; return; }
+      const p = { unit: $('pfUnit').value, empId: $('pfEmp').value.trim(), name: $('pfName').value.trim(), empType: $('pfType').value };
+      if (!p.unit || !p.empId || !p.name || !p.empType) { $('pfErr').textContent = '四個欄位都要填'; return; }
       $('pfSave').disabled = true;
       try {
         const d = await api('saveProfile', { profile: p });
@@ -568,6 +606,7 @@
         $('rfUnit').value = rec ? rec.unit : '';
         $('rfEmp').value = rec ? rec.empId : '';
         $('rfName').value = rec ? rec.name : '';
+        $('rfType').value = rec ? (rec.empType || '') : '';
       }
       $('rfDate').value = rec ? rec.date : ymd(new Date());
       $('rfShift').value = rec ? rec.shiftCode : (lastShift() || '');
@@ -650,7 +689,7 @@
         chartNo: $('rfChart').value.trim(), patient: maskName($('rfPatient').value),
         reason: $('rfReason').value.trim(), adjust: readAdj()
       };
-      if (editing.mode === 'admin') Object.assign(rec, { unit: $('rfUnit').value, empId: $('rfEmp').value.trim(), name: $('rfName').value.trim() });
+      if (editing.mode === 'admin') Object.assign(rec, { unit: $('rfUnit').value, empId: $('rfEmp').value.trim(), name: $('rfName').value.trim(), empType: $('rfType').value });
       // 前端先檢查一次
       if (editing.mode === 'admin' && (!rec.unit || !rec.empId || !rec.name)) return '請填寫單位、員工代號、姓名';
       if (!rec.date) return '請選擇加班日期';
@@ -664,8 +703,7 @@
       const m = toMin(rec.end) - toMin(rec.start);
       if (m <= 0) return '結束時間要晚於開始時間';
       if (m >= 30) return '本表只登記未滿 30 分鐘的零星加班';
-      if (!rec.chartNo) return '請填寫最後一位病人的病歷號';
-      if (!rec.reason) return '請填寫加班原因 / 處理事項';
+      if (!rec.reason) return '請填寫加班理由';
       for (const a of rec.adjust) {
         if (!a.from || !a.to) return a.raw && a.raw.length ? '加補時間格式不對或沒填完整，請用 24 小時制 4 碼，例如 1200～1230（不需要的話按「移除」）' : '加補時間沒填（不需要的話按「移除」）';
         if (toMin(a.to) <= toMin(a.from)) return '加補時間的結束要晚於開始';
@@ -676,7 +714,7 @@
 
     $('rfSave').addEventListener('click', async () => {
       const rec = collectForm();
-      if (typeof rec === 'string') { $('rfErr').textContent = rec; return; }
+      if (typeof rec === 'string') { showFormErr(rec); return; }
       $('rfSave').disabled = true; $('rfErr').textContent = '';
       try {
         if (editing.mode === 'admin') {
@@ -691,7 +729,7 @@
         const wasAdmin = editing.mode === 'admin';
         closeRecord();
         toast(wasAdmin ? '已儲存' : '已儲存，積補時數記得上電腦 key OF00');
-      } catch (err) { $('rfErr').textContent = err.message; handleAdminExpiry(err); }
+      } catch (err) { showFormErr(err.message); handleAdminExpiry(err); }
       $('rfSave').disabled = false;
     });
     $('rfDelete').addEventListener('click', async () => {
@@ -811,20 +849,20 @@
       $('stDays').textContent = sum.reduce((s, x) => s + x.days, 0);
       $('stMin').textContent = sum.reduce((s, x) => s + x.minutes, 0);
 
-      let html = `<thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班日期</th><th>班別</th><th>工時</th>
-        <th>開始</th><th>結束</th><th>分鐘</th><th>病歷號 / 原因</th><th>加補時間</th><th>LINE名稱</th><th></th></tr></thead><tbody>`;
-      if (!list.length) html += '<tr><td colspan="13" class="empty">這段期間沒有紀錄</td></tr>';
+      let html = `<thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>身分</th><th>加班日期</th><th>班別</th><th>工時</th>
+        <th>開始</th><th>結束</th><th>分鐘</th><th>病歷號 / 加班理由</th><th>加補時間</th><th>LINE名稱</th><th></th></tr></thead><tbody>`;
+      if (!list.length) html += '<tr><td colspan="14" class="empty">這段期間沒有紀錄</td></tr>';
       list.forEach(r => {
-        html += `<tr><td>${esc(r.unit)}</td><td>${esc(r.empId)}</td><td>${esc(r.name)}</td><td style="white-space:nowrap">${shortDate(r.date)}</td>
+        html += `<tr><td>${esc(r.unit)}</td><td>${esc(r.empId)}</td><td>${esc(r.name)}</td><td>${esc(r.empType || '')}</td><td style="white-space:nowrap">${shortDate(r.date)}</td>
           <td>${esc(r.shiftCode)}</td><td class="n">${r.shiftHours}</td><td>${esc(r.start)}</td><td>${esc(r.end)}</td><td class="n">${r.minutes}</td>
           <td class="wr">${esc(reasonText(r))}</td><td class="pre">${esc(r.adjustText)}</td><td style="color:var(--muted)">${esc(r.lineName || '')}</td>
           <td><button class="ghost" data-aedit="${esc(r.id)}">修改</button></td></tr>`;
       });
       $('adminTable').innerHTML = html + '</tbody>';
 
-      let sh = `<thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班天數</th><th>筆數</th><th>加班總分鐘</th><th>加補時數合計</th></tr></thead><tbody>`;
-      if (!sum.length) sh += '<tr><td colspan="7" class="empty">—</td></tr>';
-      sum.forEach(s => sh += `<tr><td>${esc(s.unit)}</td><td>${esc(s.empId)}</td><td>${esc(s.name)}</td><td class="n">${s.days}</td><td class="n">${s.count}</td><td class="n">${s.minutes}</td><td class="n">${fmtAdj(s.adj)}</td></tr>`);
+      let sh = `<thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>身分</th><th>加班天數</th><th>筆數</th><th>加班總分鐘</th><th>加補時數合計</th></tr></thead><tbody>`;
+      if (!sum.length) sh += '<tr><td colspan="8" class="empty">—</td></tr>';
+      sum.forEach(s => sh += `<tr><td>${esc(s.unit)}</td><td>${esc(s.empId)}</td><td>${esc(s.name)}</td><td>${esc(s.empType || '')}</td><td class="n">${s.days}</td><td class="n">${s.count}</td><td class="n">${s.minutes}</td><td class="n">${fmtAdj(s.adj)}</td></tr>`);
       $('sumTable').innerHTML = sh + '</tbody>';
     }
     $('adminTable').addEventListener('click', e => {
@@ -838,6 +876,7 @@
       $('stTitle').value = settings.title; $('stSigners').value = settings.signers; $('stDay').value = settings.periodStartDay;
       $('stLockDays').value = settings.lockDays; $('stLockTime').value = settings.lockTime || '23:55';
       $('stRemindDays').value = settings.remindDays || ''; $('stRemindHour').value = settings.remindHour || 9;
+      $('stMonthEnd').checked = settings.monthEndRemind !== false;
       renderRemStatus(); updateLockHint();
       $('settingsModal').classList.remove('hidden');
     });
@@ -859,7 +898,13 @@
         `${r.group ? ok : no} 綁定群組：${r.group ? '<b>' + esc(r.group.name || '（未命名群組）') + '</b>' : '尚未綁定（把機器人加入群組，在群組輸入「綁定加班提醒」）'}`;
       $('remUnbind').disabled = !r.group;
       $('remTest').disabled = !(r.hasToken && r.group);
+      $('remTest2').disabled = !(r.hasToken && r.group);
     }
+    $('remTest2').addEventListener('click', async () => {
+      if (!confirm('要現在發一則「月底積補時數」測試提醒到群組「' + (reminder.group.name || '') + '」嗎？')) return;
+      try { await api('adminReminderTest', { token: adminToken, kind: 'monthEnd' }); toast('已發送測試提醒'); }
+      catch (err) { alert(err.message); handleAdminExpiry(err); }
+    });
     $('remTest').addEventListener('click', async () => {
       if (!confirm('要現在發一則「測試提醒」到群組「' + (reminder.group.name || '') + '」嗎？')) return;
       try { await api('adminReminderTest', { token: adminToken }); toast('已發送測試提醒'); }
@@ -877,7 +922,7 @@
         settings = await api('adminSaveSettings', { token: adminToken, settings: {
           title: $('stTitle').value.trim(), signers: $('stSigners').value.trim(), periodStartDay: $('stDay').value,
           lockDays: $('stLockDays').value, lockTime: lt,
-          remindDays: $('stRemindDays').value, remindHour: $('stRemindHour').value } });
+          remindDays: $('stRemindDays').value, remindHour: $('stRemindHour').value, monthEndRemind: $('stMonthEnd').checked } });
         $('settingsModal').classList.add('hidden');
         store('ot_period', null);
         setPeriod(periodOf(ymd(new Date())));
@@ -899,16 +944,16 @@
       let h = `<div class="pr-page"><div class="pr-title">${esc(settings.title)}</div>
         <div class="pr-sub"><span>${esc(periodText())}</span><span>列印日期：${slashDate(ymd(new Date()))}</span></div>
         <table class="pr"><colgroup>
-          <col style="width:6%"><col style="width:6%"><col style="width:6.5%"><col style="width:8.5%"><col style="width:5%"><col style="width:5%">
-          <col style="width:5.5%"><col style="width:5.5%"><col style="width:6%"><col style="width:31%"><col style="width:15%"></colgroup>
-        <thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班日期</th><th>班別</th><th>班別\n工時</th><th>開始\n時間</th><th>結束\n時間</th>
-        <th>加班\n分鐘</th><th>最後一位病人病歷號/原因</th><th>加補時間</th></tr></thead><tbody>`;
+          <col style="width:6%"><col style="width:6%"><col style="width:6.5%"><col style="width:4.5%"><col style="width:8.5%"><col style="width:5%"><col style="width:5%">
+          <col style="width:5.5%"><col style="width:5.5%"><col style="width:6%"><col style="width:26.5%"><col style="width:15%"></colgroup>
+        <thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>身分</th><th>加班日期</th><th>班別</th><th>班別\n工時</th><th>開始\n時間</th><th>結束\n時間</th>
+        <th>加班\n分鐘</th><th>病歷號/加班理由</th><th>加補時間</th></tr></thead><tbody>`;
       list.forEach(r => {
-        h += `<tr><td class="c">${esc(r.unit)}</td><td class="c">${esc(r.empId)}</td><td class="c">${esc(r.name)}</td><td class="c">${slashDate(r.date)}</td>
+        h += `<tr><td class="c">${esc(r.unit)}</td><td class="c">${esc(r.empId)}</td><td class="c">${esc(r.name)}</td><td class="c">${esc(r.empType || '')}</td><td class="c">${slashDate(r.date)}</td>
           <td class="c">${esc(r.shiftCode)}</td><td class="c">${r.shiftHours}</td><td class="c">${esc(r.start)}</td><td class="c">${esc(r.end)}</td>
           <td class="c">${r.minutes}</td><td class="wrap">${esc(reasonText(r))}</td><td class="pre c">${esc(r.adjustText)}</td></tr>`;
       });
-      if (!list.length) h += '<tr><td colspan="11" class="c">（本期間無資料）</td></tr>';
+      if (!list.length) h += '<tr><td colspan="12" class="c">（本期間無資料）</td></tr>';
       h += `</tbody></table>${signHtml()}</div>`;
 
       if ($('withSummary').checked && list.length) {
@@ -916,10 +961,10 @@
         const tot = sum.reduce((a, s) => ({ days: a.days + s.days, count: a.count + s.count, minutes: a.minutes + s.minutes }), { days: 0, count: 0, minutes: 0 });
         h += `<div class="pr-page"><div class="pr-title">${esc(settings.title)}（每人合計）</div>
           <div class="pr-sub"><span>${esc(periodText())}</span><span></span></div>
-          <table class="pr"><thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>加班天數</th><th>筆數</th><th>加班總分鐘</th><th>加補時數合計</th></tr></thead><tbody>`;
-        sum.forEach(s => h += `<tr><td class="c">${esc(s.unit)}</td><td class="c">${esc(s.empId)}</td><td class="c">${esc(s.name)}</td>
+          <table class="pr"><thead><tr><th>單位</th><th>員工代號</th><th>姓名</th><th>身分</th><th>加班天數</th><th>筆數</th><th>加班總分鐘</th><th>加補時數合計</th></tr></thead><tbody>`;
+        sum.forEach(s => h += `<tr><td class="c">${esc(s.unit)}</td><td class="c">${esc(s.empId)}</td><td class="c">${esc(s.name)}</td><td class="c">${esc(s.empType || '')}</td>
           <td class="c">${s.days}</td><td class="c">${s.count}</td><td class="c">${s.minutes}</td><td class="c">${fmtAdj(s.adj)}</td></tr>`);
-        h += `<tr class="tot"><td class="c" colspan="3">合計（${sum.length} 人）</td><td class="c">${tot.days}</td><td class="c">${tot.count}</td><td class="c">${tot.minutes}</td><td></td></tr>`;
+        h += `<tr class="tot"><td class="c" colspan="4">合計（${sum.length} 人）</td><td class="c">${tot.days}</td><td class="c">${tot.count}</td><td class="c">${tot.minutes}</td><td></td></tr>`;
         h += `</tbody></table>${signHtml()}</div>`;
       }
       $('printArea').innerHTML = h;
@@ -940,22 +985,22 @@
       try {
         await loadXlsx();
         const list = filtered();
-        const head = ['單位', '員工代號', '姓名', '加班日期', '班別', '班別工時', '開始時間', '結束時間', '加班時數分鐘', '最後一位病人病歷號/原因', '加補時間'];
+        const head = ['單位', '員工代號', '姓名', '身分', '加班日期', '班別', '班別工時', '開始時間', '結束時間', '加班時數分鐘', '病歷號/加班理由', '加補時間'];
         const aoa = [[settings.title], [periodText()], head];
-        list.forEach(r => aoa.push([r.unit, isNaN(r.empId) ? r.empId : Number(r.empId), r.name, slashDate(r.date),
+        list.forEach(r => aoa.push([r.unit, isNaN(r.empId) ? r.empId : Number(r.empId), r.name, r.empType || '', slashDate(r.date),
           isNaN(r.shiftCode) ? r.shiftCode : Number(r.shiftCode), r.shiftHours, r.start, r.end, r.minutes, reasonText(r), r.adjustText]));
         aoa.push([]);
         const names = String(settings.signers || '').split(/[,，、]/).map(s => s.trim()).filter(Boolean);
-        const signRow = new Array(11).fill('');
-        names.forEach((n, i) => signRow[Math.floor(i * 11 / names.length)] = n);
+        const signRow = new Array(12).fill('');
+        names.forEach((n, i) => signRow[Math.floor(i * 12 / names.length)] = n);
         aoa.push(signRow);
         const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } }];
-        ws['!cols'] = [8, 9, 9, 12, 7, 8, 9, 9, 10, 46, 18].map(w => ({ wch: w }));
+        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }];
+        ws['!cols'] = [8, 9, 9, 6, 12, 7, 8, 9, 9, 10, 46, 18].map(w => ({ wch: w }));
         const sum = summarize(list);
-        const ws2 = XLSX.utils.aoa_to_sheet([['單位', '員工代號', '姓名', '加班天數', '筆數', '加班總分鐘', '加補時數合計']]
-          .concat(sum.map(s => [s.unit, isNaN(s.empId) ? s.empId : Number(s.empId), s.name, s.days, s.count, s.minutes, s.adj || ''])));
-        ws2['!cols'] = [8, 9, 9, 9, 6, 11, 12].map(w => ({ wch: w }));
+        const ws2 = XLSX.utils.aoa_to_sheet([['單位', '員工代號', '姓名', '身分', '加班天數', '筆數', '加班總分鐘', '加補時數合計']]
+          .concat(sum.map(s => [s.unit, isNaN(s.empId) ? s.empId : Number(s.empId), s.name, s.empType || '', s.days, s.count, s.minutes, s.adj || ''])));
+        ws2['!cols'] = [8, 9, 9, 6, 9, 6, 11, 12].map(w => ({ wch: w }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '加班明細');
         XLSX.utils.book_append_sheet(wb, ws2, '每人合計');
